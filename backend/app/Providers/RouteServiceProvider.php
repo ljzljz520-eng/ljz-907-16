@@ -28,6 +28,11 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
         });
 
+        // 管理员登录限频：每分钟 5 次，按 IP + 邮箱聚合，防爆破
+        RateLimiter::for('admin-login', function (Request $request) {
+            return Limit::perMinute(5)->by($request->ip() . '|' . (string) $request->input('email'));
+        });
+
         $this->routes(function () {
             Route::middleware('api')
                 ->prefix('api')

@@ -4,10 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\Movie;
 use App\Models\Poster;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class PosterManagementTest extends TestCase
@@ -16,6 +18,15 @@ class PosterManagementTest extends TestCase
 
     // 最小合法 1x1 PNG
     private const PNG_BYTES = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // 海报写接口均要求管理员身份，这里为既有业务流程测试统一登录管理员
+        Sanctum::actingAs(User::factory()->admin()->create());
+    }
+
 
     private function movie(array $attrs = []): Movie
     {

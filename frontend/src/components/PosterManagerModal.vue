@@ -7,6 +7,7 @@ import {
 } from 'lucide-vue-next';
 import api, { extractError } from '../lib/api';
 import { resolvePosterUrl, formatFileSize } from '../lib/poster';
+import { isAdmin, adminUser, loginAdmin, logoutAdmin } from '../lib/auth';
 
 const props = defineProps({
   isOpen: Boolean,
@@ -22,6 +23,34 @@ const ACCEPT_ATTR = '.jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,
 const loading = ref(false);
 const posters = ref([]);
 const actionError = ref('');
+
+// 管理员登录
+const loginEmail = ref('');
+const loginPassword = ref('');
+const loginLoading = ref(false);
+const loginError = ref('');
+
+async function submitLogin() {
+  if (loginLoading.value) return;
+  loginLoading.value = true;
+  loginError.value = '';
+  actionError.value = '';
+  try {
+    await loginAdmin(loginEmail.value.trim(), loginPassword.value);
+    loginEmail.value = '';
+    loginPassword.value = '';
+    await loadHistory();
+  } catch (err) {
+    loginError.value = extractError(err, '登录失败，请检查管理员账号和密码。');
+  } finally {
+    loginLoading.value = false;
+  }
+}
+
+async function handleLogout() {
+  await logoutAdmin();
+  actionError.value = '';
+}
 
 // 本地上传
 const selectedFile = ref(null);
@@ -118,8 +147,14 @@ function onFileChange(event) {
   filePreviewUrl.value = URL.createObjectURL(file);
 }
 
+// 统一处理写接口的鉴权类错误（401 已由 api 拦截器清除登录态，403 为已登录但非管理员）
+function showWriteError(err, fallback) {
+  if (err?.response?.status === 403) return '当前账号没有管理海报的权限。';
+  return extractError(err, fallback);
+}
+
 async function submitUpload() {
-  if (!selectedFile.value || uploading.value) return;
+  if (!isAdmin.value || !selectedFile.value || uploading.value) return;
   uploading.value = true;
   uploadProgress.value = 0;
   fileError.value = '';
@@ -139,7 +174,7 @@ async function submitUpload() {
     await loadHistory();
     emit('updated', data.movie);
   } catch (err) {
-    fileError.value = extractError(err, '海报上传失败。');
+    fileError.value = showWriteError(err, '海报上传失败。');
   } finally {
     uploading.value = false;
   }
@@ -148,6 +183,7 @@ async function submitUpload() {
 /* ---------------- 外链 ---------------- */
 
 async function checkExternal(notifyOnly = false) {
+  if (!isAdmin.value) return false;
   const url = externalUrl.value.trim();
   if (!url) {
     externalError.value = '请填写图片外链地址。';
@@ -168,7 +204,7 @@ async function checkExternal(notifyOnly = false) {
     if (report && typeof report === 'object' && 'ok' in report) {
       externalReport.value = report;
     }
-    externalError.value = extractError(err, '外链检测失败。');
+    externalError.value = showWriteError(err, '外链检测失败。');
     return false;
   } finally {
     externalChecking.value = false;
@@ -176,7 +212,7 @@ async function checkExternal(notifyOnly = false) {
 }
 
 async function submitExternal() {
-  if (externalSubmitting.value) return;
+  if (!isAdmin.value || externalSubmitting.value) return;
   const ok = await checkExternal();
   if (!ok) return;
 
@@ -190,7 +226,7 @@ async function submitExternal() {
     await loadHistory();
     emit('updated', data.movie);
   } catch (err) {
-    externalError.value = extractError(err, '外链海报绑定失败。');
+    externalError.value = showWriteError(err, '外链海报绑定失败。');
   } finally {
     externalSubmitting.value = false;
   }
@@ -201,7 +237,7 @@ async function submitExternal() {
 const actingId = ref(null);
 
 async function activatePoster(poster) {
-  if (poster.is_active || actingId.value) return;
+  if (!isAdmin.value || poster.is_active || actingId.value) return;
   actingId.value = poster.id;
   actionError.value = '';
   try {
@@ -209,14 +245,14 @@ async function activatePoster(poster) {
     await loadHistory();
     emit('updated', data.movie);
   } catch (err) {
-    actionError.value = extractError(err, '切换海报失败。');
+    actionError.value = showWriteError(err, '切换海报失败。');
   } finally {
     actingId.value = null;
   }
 }
 
 async function removePoster(poster) {
-  if (poster.is_active || actingId.value) return;
+  if (!isAdmin.value || poster.is_active || actingId.value) return;
   const confirmed = window.confirm(
     '确定删除这条历史海报记录吗？\n（当前正在使用的海报不受影响；若为本地文件且无其他记录引用，物理文件也会被删除）'
   );
@@ -228,7 +264,7 @@ async function removePoster(poster) {
     await api.delete(`/movies/${props.movie.id}/posters/${poster.id}`);
     await loadHistory();
   } catch (err) {
-    actionError.value = extractError(err, '删除失败。');
+    actionError.value = showWriteError(err, '删除失败。');
   } finally {
     actingId.value = null;
   }
@@ -280,9 +316,23 @@ function formatTime(value) {
                     {{ movie.translated_title || movie.title }} ({{ movie.year }})
                   </p>
                 </div>
-                <button @click="emit('close')" class="rounded-full p-2 text-gray-400 hover:bg-white/10 hover:text-white transition">
-                  <X class="h-5 w-5" />
-                </button>
+                <div class="flex items-center gap-2">
+                  <div v-if="isAdmin" class="hidden items-center gap-2 sm:flex">
+                    <span class="rounded-full bg-purple-500/15 px-2.5 py-1 text-[11px] text-purple-300">
+                      管理员{{ adminUser?.name ? ` · ${adminUser.name}` : '' }}
+                    </span>
+                    <button
+                      type="button"
+                      @click="handleLogout"
+                      class="rounded-full border border-white/10 px-3 py-1 text-[11px] text-gray-400 transition hover:bg-white/10 hover:text-white"
+                    >
+                      退出登录
+                    </button>
+                  </div>
+                  <button @click="emit('close')" class="rounded-full p-2 text-gray-400 hover:bg-white/10 hover:text-white transition">
+                    <X class="h-5 w-5" />
+                  </button>
+                </div>
               </div>
 
               <div class="max-h-[75vh] overflow-y-auto px-6 py-5">
@@ -291,6 +341,44 @@ function formatTime(value) {
                   <AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
                   <span>{{ actionError }}</span>
                 </div>
+
+                <!-- 未登录管理员：登录墙（使用记录仍可公开浏览，写操作被隐藏） -->
+                <section v-if="!isAdmin" class="mb-6 rounded-xl border border-white/10 p-5">
+                  <div class="mb-3 text-sm font-semibold text-gray-200">管理员登录</div>
+                  <p class="mb-4 text-xs text-gray-500">
+                    上传 / 替换 / 找回 / 删除海报仅对管理员开放，请先登录管理员账号。
+                  </p>
+                  <div class="space-y-3">
+                    <input
+                      v-model="loginEmail"
+                      type="email"
+                      autocomplete="username"
+                      placeholder="管理员邮箱"
+                      class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-gray-200 placeholder-gray-600 outline-none focus:border-purple-500/60"
+                      @keyup.enter="submitLogin"
+                    />
+                    <input
+                      v-model="loginPassword"
+                      type="password"
+                      autocomplete="current-password"
+                      placeholder="密码"
+                      class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-gray-200 placeholder-gray-600 outline-none focus:border-purple-500/60"
+                      @keyup.enter="submitLogin"
+                    />
+                    <p v-if="loginError" class="flex items-start gap-1.5 text-xs text-red-400">
+                      <AlertCircle class="mt-0.5 h-3.5 w-3.5 shrink-0" /> {{ loginError }}
+                    </p>
+                    <button
+                      type="button"
+                      :disabled="loginLoading || !loginEmail.trim() || !loginPassword"
+                      @click="submitLogin"
+                      class="flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Loader2 v-if="loginLoading" class="h-4 w-4 animate-spin" />
+                      登录并管理
+                    </button>
+                  </div>
+                </section>
 
                 <!-- 当前海报 -->
                 <section class="mb-6">
@@ -314,8 +402,8 @@ function formatTime(value) {
                   </div>
                 </section>
 
-                <!-- 两种来源 -->
-                <section class="mb-6 grid gap-4 md:grid-cols-2">
+                <!-- 两种来源（仅管理员） -->
+                <section v-if="isAdmin" class="mb-6 grid gap-4 md:grid-cols-2">
                   <!-- 本地上传 -->
                   <div class="rounded-xl border border-white/10 p-4">
                     <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-200">
@@ -473,7 +561,7 @@ function formatTime(value) {
                         </p>
                       </div>
 
-                      <div class="flex shrink-0 items-center gap-1">
+                      <div v-if="isAdmin" class="flex shrink-0 items-center gap-1">
                         <button
                           v-if="!poster.is_active"
                           type="button"

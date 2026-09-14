@@ -76,7 +76,7 @@ ready to handle connections
 
 ### 海报管理
 
-在影片详情页（悬停海报区域 / 移动端直接可见）点击「管理海报」，管理员可以：
+在影片详情页（悬停海报区域 / 移动端直接可见）点击「管理海报」，**管理员登录后**可以：
 
 - **上传本地海报**：支持 JPG / JPEG / PNG / WEBP / GIF，文件不超过 **5MB**；服务端会校验扩展名、MIME 与真实图片内容（防伪装文件），并记录尺寸大小。
 - **填写外链地址**：可先点击「检测可访问性」预检，保存时服务端再次校验：
@@ -87,7 +87,18 @@ ready to handle connections
 - **安全删除**：当前使用中的海报禁止删除；删除历史记录时，仅当本地文件没有任何其他记录引用才会物理删除。
 - **前后台同源**：前台卡片与详情页统一读取 `movies.poster_url` 这一个图源字段，由后端在启用/替换海报时自动同步。
 
-> 注：本项目尚未接入管理员登录，海报写接口当前未加鉴权中间件；上线前请为这些路由补充 `auth:sanctum` 及管理员角色校验。
+#### 管理员鉴权
+
+- 海报的**写入 / 替换 / 找回 / 删除**以及**外链检测**（会发起服务端请求，存在 SSRF 面）均需管理员身份，路由统一经过 `auth:sanctum` + `admin`（`App\Http\Middleware\EnsureUserIsAdmin`）保护；未登录返回 `401`，已登录但非管理员返回 `403`。
+- 海报**使用记录（GET）为只读**，保持公开，不影响前台正常展示。
+- 管理员通过 `POST /api/admin/login`（邮箱 + 密码）登录，后端签发 Sanctum API Token，前端以 `Authorization: Bearer <token>` 调用写接口；`POST /api/admin/logout` 注销当前令牌。登录接口按 IP + 邮箱限频（每分钟 5 次）防爆破。
+- 首个管理员账号由 `AdminUserSeeder` 在启动 `db:seed` 时幂等创建，凭据可通过环境变量覆盖（默认值仅用于本地/演示，**生产环境务必修改**）：
+
+  | 环境变量 | 默认值 |
+  | --- | --- |
+  | `ADMIN_EMAIL` | `admin@cinevault.local` |
+  | `ADMIN_PASSWORD` | `admin123456` |
+  | `ADMIN_NAME` | `管理员` |
 
 存量影片可通过 `php artisan posters:backfill` 将现有 `poster_url` 回填为一条历史记录（容器启动时会自动执行一次）。
 
