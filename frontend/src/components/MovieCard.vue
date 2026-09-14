@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { Star } from 'lucide-vue-next';
+import { resolvePosterUrl } from '../lib/poster';
 
 const props = defineProps({
   movie: {
@@ -9,14 +10,8 @@ const props = defineProps({
   }
 });
 
-const poster = computed(() => {
-  if (!props.movie.poster_url) return null;
-  // 如果URL来自playwoool.com（可能有403问题），使用代理
-  if (props.movie.poster_url.includes('playwoool.com')) {
-    return `http://localhost:8000/api/proxy-image?url=${encodeURIComponent(props.movie.poster_url)}`;
-  }
-  return props.movie.poster_url;
-});
+// 与详情页共用同一个海报图源解析逻辑
+const poster = computed(() => resolvePosterUrl(props.movie.poster_url));
 
 // 处理图片加载错误
 const handleImageError = (event) => {

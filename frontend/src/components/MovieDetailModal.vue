@@ -1,13 +1,24 @@
 <script setup>
+import { computed } from 'vue';
 import { Dialog, DialogPanel, DialogTitle, TransitionRoot, TransitionChild } from '@headlessui/vue';
 import { X, Star, Calendar, User, Tag, Globe, MessageSquare, Clock, Edit3, Award, Image as ImageIcon, ExternalLink } from 'lucide-vue-next';
+import { resolvePosterUrl } from '../lib/poster';
 
 const props = defineProps({
   movie: Object,
   isOpen: Boolean
 });
 
-defineEmits(['close']);
+const emit = defineEmits(['close', 'manage-poster']);
+
+// 与卡片页共用同一海报图源，避免两处不一致
+const poster = computed(() => resolvePosterUrl(props.movie?.poster_url));
+
+const handleImageError = (event) => {
+  event.target.style.display = 'none';
+  const placeholder = event.target.nextElementSibling;
+  if (placeholder) placeholder.style.display = 'flex';
+};
 </script>
 
 <template>
@@ -50,17 +61,30 @@ defineEmits(['close']);
                 
                 <!-- Left Column: Poster -->
                 <div class="w-full lg:w-[350px] shrink-0 p-6 md:p-10 lg:pr-0">
-                  <div class="relative aspect-[2/3] w-full overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10">
-                    <img 
-                      v-if="movie?.poster_url"
-                      :src="movie.poster_url.includes('playwoool.com') ? `http://localhost:8000/api/proxy-image?url=${encodeURIComponent(movie.poster_url)}` : movie.poster_url" 
+                  <div class="relative aspect-[2/3] w-full overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10 group/poster">
+                    <img
+                      v-if="poster"
+                      :src="poster"
                       :alt="movie.title"
                       class="h-full w-full object-cover"
-                      @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'"
+                      @error="handleImageError"
                     />
-                    <div v-else class="flex h-full w-full items-center justify-center bg-dark-700 text-gray-500" style="display: none;">
+                    <div v-if="!poster" class="flex h-full w-full items-center justify-center bg-dark-700 text-gray-500">
                       无海报
                     </div>
+                    <div v-else class="absolute inset-0 hidden bg-dark-900/80 items-center justify-center text-gray-500">
+                      海报加载失败
+                    </div>
+
+                    <!-- 后台管理入口：上传本地海报 / 填写外链 / 查看历史 -->
+                    <button
+                      type="button"
+                      @click.stop="emit('manage-poster', movie)"
+                      class="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-gradient-to-t from-black/85 to-transparent px-4 pb-3 pt-10 text-sm font-medium text-white opacity-100 transition-opacity duration-200 md:opacity-0 md:group-hover/poster:opacity-100 focus:opacity-100"
+                    >
+                      <Edit3 class="h-4 w-4" />
+                      管理海报
+                    </button>
                   </div>
                 </div>
 

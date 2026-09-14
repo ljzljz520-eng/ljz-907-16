@@ -1,11 +1,12 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue';
-import axios from 'axios';
+import api from './lib/api';
 import Navbar from './components/Navbar.vue';
 import MovieCard from './components/MovieCard.vue';
 import Pagination from './components/Pagination.vue';
 import UploadModal from './components/UploadModal.vue';
 import MovieDetailModal from './components/MovieDetailModal.vue';
+import PosterManagerModal from './components/PosterManagerModal.vue';
 import { Loader2, Film, Search } from 'lucide-vue-next';
 
 const movies = ref([]);
@@ -14,13 +15,14 @@ const lastPage = ref(1);
 const loading = ref(true);
 const isUploadOpen = ref(false);
 const isDetailOpen = ref(false);
+const isPosterManagerOpen = ref(false);
 const selectedMovie = ref(null);
 const searchQuery = ref('');
 
 const fetchMovies = async (page = 1) => {
   loading.value = true;
   try {
-    const response = await axios.get(`http://localhost:8000/api/movies`, {
+    const response = await api.get(`/movies`, {
       params: {
         page,
         search: searchQuery.value
@@ -61,6 +63,22 @@ const handleUploadSuccess = () => {
 const openDetail = (movie) => {
   selectedMovie.value = movie;
   isDetailOpen.value = true;
+};
+
+// 从详情页打开海报管理弹窗（详情弹窗保持在下层）
+const openPosterManager = (movie) => {
+  selectedMovie.value = movie;
+  isPosterManagerOpen.value = true;
+};
+
+// 海报变更后同步当前选中影片与列表数据，保证卡片/详情同源
+const handlePosterUpdated = (updatedMovie) => {
+  if (!updatedMovie) return;
+  selectedMovie.value = { ...selectedMovie.value, ...updatedMovie };
+  const idx = movies.value.findIndex((m) => m.id === updatedMovie.id);
+  if (idx !== -1) {
+    movies.value[idx] = { ...movies.value[idx], ...updatedMovie };
+  }
 };
 </script>
 
@@ -132,10 +150,18 @@ const openDetail = (movie) => {
       @upload-success="handleUploadSuccess"
     />
 
-    <MovieDetailModal 
+    <MovieDetailModal
       :is-open="isDetailOpen"
       :movie="selectedMovie"
       @close="isDetailOpen = false"
+      @manage-poster="openPosterManager"
+    />
+
+    <PosterManagerModal
+      :is-open="isPosterManagerOpen"
+      :movie="selectedMovie"
+      @close="isPosterManagerOpen = false"
+      @updated="handlePosterUpdated"
     />
   </div>
 </template>

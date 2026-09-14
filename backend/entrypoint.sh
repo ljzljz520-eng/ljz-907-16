@@ -66,6 +66,7 @@ php artisan config:clear 2>/dev/null || true
 # Ensure required directories exist and are writable
 echo "Creating required directories..."
 mkdir -p bootstrap/cache
+mkdir -p storage/app/public
 mkdir -p storage/framework/cache
 mkdir -p storage/framework/sessions
 mkdir -p storage/framework/views
@@ -107,6 +108,12 @@ echo \"✓ CORS configuration verified: \" . count(\$config['allowed_origins']) 
 # Run migrations and seed
 php artisan migrate --force
 php artisan db:seed --force
+
+# 海报本地上传依赖 public/storage -> storage/app/public 软链（幂等）
+php artisan storage:link 2>/dev/null || true
+
+# 将存量影片的 poster_url 补建为海报使用记录（便于后台查看历史）
+php artisan posters:backfill --force 2>/dev/null || true
 
 # Warm up the application by initializing the kernel and loading config
 # This ensures the config cache is fully loaded before PHP-FPM starts

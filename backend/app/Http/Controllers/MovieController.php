@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Movie;
+use App\Services\PosterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -153,6 +154,9 @@ class MovieController extends Controller
                     $languageRaw = ($map['language'] !== false && isset($row[$map['language']])) ? $row[$map['language']] : null;
                     $language = $this->extractLanguage($languageRaw);
 
+                    // CSV 中的外链不做服务端抓取，仅记录原始链接
+                    $posterUrl = $this->cleanField(($map['poster_url'] !== false && isset($row[$map['poster_url']])) ? $row[$map['poster_url']] : null, 1024);
+
                     $data = [
                         'title' => $this->cleanField(trim($title), 255),
                         'translated_title' => $this->cleanField(($map['translated_title'] !== false && isset($row[$map['translated_title']])) ? $row[$map['translated_title']] : null, 255),
@@ -169,16 +173,21 @@ class MovieController extends Controller
                         'imdb_rating' => $this->cleanField(($map['imdb_rating'] !== false && isset($row[$map['imdb_rating']])) ? $row[$map['imdb_rating']] : null, 50),
                         'imdb_link' => $this->cleanField(($map['imdb_link'] !== false && isset($row[$map['imdb_link']])) ? $row[$map['imdb_link']] : null, 512),
                         'douban_link' => $this->cleanField(($map['douban_link'] !== false && isset($row[$map['douban_link']])) ? $row[$map['douban_link']] : null, 512),
-                        'poster_url' => $this->cleanField(($map['poster_url'] !== false && isset($row[$map['poster_url']])) ? $row[$map['poster_url']] : null, 1024),
+                        'poster_url' => $posterUrl,
                         'description' => $this->cleanField(($map['description'] !== false && isset($row[$map['description']])) ? $row[$map['description']] : null, null),
                         'awards' => $this->cleanField(($map['awards'] !== false && isset($row[$map['awards']])) ? $row[$map['awards']] : null, null),
                         'screenshots' => ($map['screenshots'] !== false && isset($row[$map['screenshots']])) ? explode(',', $row[$map['screenshots']]) : null,
                     ];
 
-                    Movie::updateOrCreate(
+                    $movie = Movie::updateOrCreate(
                         ['title' => $data['title'], 'year' => $data['year']],
                         $data
                     );
+
+                    // 将导入的外链同步进海报使用记录；与当前海报不同时保留旧记录
+                    if ($posterUrl && $movie->wasChanged('poster_url')) {
+                        app(PosterService::class)->syncFromImport($movie, $posterUrl);
+                    }
 
                     $successCount++;
                 } catch (\Exception $e) {
